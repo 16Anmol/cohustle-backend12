@@ -330,23 +330,42 @@ router.patch("/tags", authMiddleware, async (req, res) => {
 
 
 // ── GET /api/profile/turn-credentials ─────────────────────────────────────────
-// Returns ICE server config with TURN credentials from env vars.
-// Called by the frontend before starting a WebRTC connection.
+// Fetches ICE servers from Metered API using API key stored in env vars.
+// API key never reaches the frontend — safe to store on server only.
 router.get("/turn-credentials", authMiddleware, async (req, res) => {
-  const username   = process.env.TURN_USERNAME   || "openrelayproject";
-  const credential = process.env.TURN_CREDENTIAL || "openrelayproject";
+  try {
+    const apiKey = process.env.METERED_API_KEY;
+    const domain = process.env.METERED_DOMAIN;
 
-  res.json({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun.relay.metered.ca:80" },
-      { urls: "turn:global.relay.metered.ca:80",                    username, credential },
-      { urls: "turn:global.relay.metered.ca:80?transport=tcp",      username, credential },
-      { urls: "turn:global.relay.metered.ca:443",                   username, credential },
-      { urls: "turns:global.relay.metered.ca:443?transport=tcp",    username, credential },
-    ],
-  });
+    if (apiKey && domain) {
+      // Fetch fresh ICE servers from Metered API
+      const response = await fetch(
+        `https://${domain}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+      );
+      if (response.ok) {
+        const iceServers = await response.json();
+        return res.json({ iceServers });
+      }
+    }
+
+    // Fallback: use static credentials from env vars if API fetch fails
+    const username   = process.env.TURN_USERNAME   || "openrelayproject";
+    const credential = process.env.TURN_CREDENTIAL || "openrelayproject";
+
+    res.json({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun.relay.metered.ca:80" },
+        { urls: "turn:global.relay.metered.ca:80",                 username, credential },
+        { urls: "turn:global.relay.metered.ca:80?transport=tcp",   username, credential },
+        { urls: "turn:global.relay.metered.ca:443",                username, credential },
+        { urls: "turns:global.relay.metered.ca:443?transport=tcp", username, credential },
+      ],
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch TURN credentials" });
+  }
 });
 
 // ── PATCH /api/profile/documents ─────────────────────────────────────────────
