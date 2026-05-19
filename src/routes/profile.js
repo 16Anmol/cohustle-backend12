@@ -340,7 +340,7 @@ router.get("/turn-credentials", authMiddleware, async (req, res) => {
     if (apiKey && domain) {
       // Fetch fresh ICE servers from Metered API
       const response = await fetch(
-        `https://${domain}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+        `https://${domain}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}&region=india`
       );
       if (response.ok) {
         const iceServers = await response.json();
