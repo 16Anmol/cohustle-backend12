@@ -328,6 +328,27 @@ router.patch("/tags", authMiddleware, async (req, res) => {
 
 
 
+
+// ── GET /api/profile/turn-credentials ─────────────────────────────────────────
+// Returns ICE server config with TURN credentials from env vars.
+// Called by the frontend before starting a WebRTC connection.
+router.get("/turn-credentials", authMiddleware, async (req, res) => {
+  const username   = process.env.TURN_USERNAME   || "openrelayproject";
+  const credential = process.env.TURN_CREDENTIAL || "openrelayproject";
+
+  res.json({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun.relay.metered.ca:80" },
+      { urls: "turn:global.relay.metered.ca:80",                    username, credential },
+      { urls: "turn:global.relay.metered.ca:80?transport=tcp",      username, credential },
+      { urls: "turn:global.relay.metered.ca:443",                   username, credential },
+      { urls: "turns:global.relay.metered.ca:443?transport=tcp",    username, credential },
+    ],
+  });
+});
+
 // ── PATCH /api/profile/documents ─────────────────────────────────────────────
 // Lets a user upload/update their document links at any time (e.g. after suspension)
 router.patch("/documents", authMiddleware, async (req, res) => {
