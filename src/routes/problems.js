@@ -294,4 +294,21 @@ router.get("/:id/applications", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── DELETE /api/problems/:id ──────────────────────────────────────────────────
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== "startup")
+      return res.status(403).json({ error: "Only startup accounts can delete tasks" });
+    const problem = await Problem.findOneAndDelete({
+      _id: req.params.id,
+      startupUserId: req.user._id,
+    });
+    if (!problem) return res.status(404).json({ error: "Task not found or not yours" });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 export default router;

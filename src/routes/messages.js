@@ -48,7 +48,35 @@ router.get("/conversations", authMiddleware, async (req, res) => {
       const unreadCount = await Message.countDocuments({
         conversationId: c._id, senderId: { $ne: req.user._id }, read: false,
       });
-      return { ...c, otherUser: other, unreadCount };
+
+      // Compute meeting indicator for this conversation
+      const now = Date.now();
+      const activeMeetings = (c.meetings || []).filter(m => m.status !== "ended");
+      let meetingStatus = null; // "live" | "soon" | "scheduled"
+      if (activeMeetings.length > 0) {
+        // Find nearest upcoming meeting
+        let nearest = null, nearestMs = Infinity;
+        for (const m of activeMeetings) {
+          try {
+            const [y, mo, d]        = m.date.split("-").map(Number);
+            const [timePart, ampm]  = m.timeSlot.split(" ");
+            const [hStr, minStr]    = timePart.split(":");
+            let hr = parseInt(hStr);
+            if (ampm?.toLowerCase() === "pm" && hr !== 12) hr += 12;
+            if (ampm?.toLowerCase() === "am" && hr === 12) hr = 0;
+            const ms = new Date(y, mo - 1, d, hr, parseInt(minStr) || 0).getTime() - now;
+            if (ms < nearestMs) { nearest = ms; nearestMs = ms; }
+          } catch {}
+        }
+        if (nearest !== null) {
+          const hrs = nearest / (1000 * 60 * 60);
+          if (nearest <= 0 && nearest > -3600000)  meetingStatus = "live";
+          else if (hrs > 0 && hrs <= 5)             meetingStatus = "soon";
+          else if (hrs > 5)                         meetingStatus = "scheduled";
+        }
+      }
+
+      return { ...c, otherUser: other, unreadCount, meetings: c.meetings || [], meetingStatus };
     }));
 
     res.json({ conversations: enriched });
@@ -282,5 +310,46 @@ router.get("/conversations/:id/meetings", authMiddleware, async (req, res) => {
     res.json({ meetings: conversation.meetings });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// ── GET /api/messages/my-meetings ─────────────────────────────────────────────
+// Returns all upcoming/live meetings for the current user across all conversations
+router.get("/my-meetings", authMiddleware, async (req, res) => {
+  try {
+    // Find all conversations the user is part of
+    const conversations = await Conversation.find({
+      participants: req.user._id,
+    }).select("_id participants meetings").populate("participants", "fullName avatar").lean();
+
+    const now = new Date();
+    const allMeetings = [];
+
+    for (const conv of conversations) {
+      if (!conv.meetings?.length) continue;
+      const other = conv.participants.find(
+        p => p._id.toString() !== req.user._id.toString()
+      );
+      for (const m of conv.meetings) {
+        // Include upcoming and live meetings (within last 2 hours)
+        const meetingTime = new Date(m.date + " " + m.timeSlot);
+        const hoursBefore = (now - meetingTime) / (1000 * 60 * 60);
+        if (hoursBefore < 2) { // upcoming + live (started within 2 hours)
+          allMeetings.push({
+            ...m,
+            conversationId: conv._id,
+            otherUser: other,
+          });
+        }
+      }
+    }
+
+    // Sort by date/time
+    allMeetings.sort((a, b) => new Date(a.date + " " + a.timeSlot) - new Date(b.date + " " + b.timeSlot));
+
+    res.json({ meetings: allMeetings });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 export default router;
